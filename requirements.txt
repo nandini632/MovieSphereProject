@@ -5,3 +5,4 @@ numpy>=1.24
 gunicorn>=21.0
 boto3>=1.34
 python-dotenv
+requests
