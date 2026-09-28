@@ -11,3 +11,4 @@ venv/
 
 #dataset
 data/
+ml-latest-small/

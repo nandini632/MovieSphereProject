@@ -3,6 +3,8 @@ MovieSphere — Flask application
 Phase 6A: real MovieLens data served via Pandas.
 """
 
+from salesforce_integration import get_salesforce_accounts
+
 from flask import Flask, render_template, jsonify, request
 
 from data_layer import loader as data_loader
@@ -15,6 +17,7 @@ app = Flask(__name__)
 # ======================================================================
 # PAGE ROUTES  (unchanged from Phase 5)
 # ======================================================================
+
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -58,6 +61,7 @@ def user_page():
 # ======================================================================
 # API ROUTES  (Phase 6A)
 # ======================================================================
+
 def _dataset_unavailable():
     return jsonify({"error": "dataset_unavailable"}), 503
 
@@ -73,6 +77,7 @@ def api_movies():
 def api_movies_search():
     if not data_loader.data_available():
         return _dataset_unavailable()
+
     q = request.args.get("q", "")
     return jsonify(data_service.search_movies(q, limit=20))
 
@@ -81,9 +86,12 @@ def api_movies_search():
 def api_movie_details(movie_id):
     if not data_loader.data_available():
         return _dataset_unavailable()
+
     movie = data_service.get_movie(movie_id)
+
     if movie is None:
         return jsonify({"error": "not_found"}), 404
+
     return jsonify(movie)
 
 
@@ -91,6 +99,7 @@ def api_movie_details(movie_id):
 def api_analytics():
     if not data_loader.data_available():
         return _dataset_unavailable()
+
     return jsonify(data_service.analytics_kpis())
 
 
@@ -98,9 +107,12 @@ def api_analytics():
 def api_user_insights(user_id):
     if not data_loader.data_available():
         return _dataset_unavailable()
+
     insights = data_service.user_insights(user_id)
+
     if insights is None:
         return jsonify({"error": "user_not_found"}), 404
+
     return jsonify(insights)
 
 
@@ -112,18 +124,27 @@ def api_recommendations(movie_id):
     """
     if not data_loader.data_available():
         return _dataset_unavailable()
+
     recs = data_service.recommendations(movie_id, limit=10)
+
     if recs is None:
         return jsonify({"error": "not_found"}), 404
+
     return jsonify(recs)
+
 
 @app.route("/api/artifacts/status")
 def api_artifacts_status():
     meta = data_artifacts.als_meta() or {}
+
     return jsonify({
         "analytics": {
             "available": data_artifacts.has_analytics(),
-            "source": "precomputed" if data_artifacts.has_analytics() else "live_pandas",
+            "source": (
+                "precomputed"
+                if data_artifacts.has_analytics()
+                else "live_pandas"
+            ),
         },
         "recommendations": {
             "movie_to_movie": {
@@ -137,11 +158,15 @@ def api_artifacts_status():
             "als_enabled": data_artifacts.als_enabled(),
             "active_source": (
                 "als_artifacts"
-                if (data_artifacts.has_recommendations() and data_artifacts.als_enabled())
+                if (
+                    data_artifacts.has_recommendations()
+                    and data_artifacts.als_enabled()
+                )
                 else "genre_stub"
             ),
         },
     })
+
 
 @app.route("/api/user/<int:user_id>/recommendations")
 def api_user_recommendations(user_id):
@@ -158,12 +183,50 @@ def api_user_recommendations(user_id):
     limit = max(1, min(limit, 50))
 
     recs = data_service.user_recommendations(user_id, limit=limit)
+
     if recs is None:
         return jsonify({
             "error": "unavailable",
             "reason": "als_disabled_or_user_not_in_model",
         }), 404
+
     return jsonify(recs)
 
+
+# ======================================================================
+# SALESFORCE CLOUD INTEGRATION
+# ======================================================================
+
+@app.route("/api/salesforce/movies")
+def salesforce_movies():
+    """
+    Returns MovieSphere movie records stored in Salesforce.
+    """
+    try:
+        records = get_salesforce_accounts()
+
+        return jsonify({
+            "success": True,
+            "count": len(records),
+            "movies": records
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ======================================================================
+# APPLICATION START
+# ======================================================================
+
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    import os
+
+    app.run(
+        debug=False,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000))
+    )
